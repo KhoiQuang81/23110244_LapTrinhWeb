@@ -25,7 +25,7 @@ public class DBConnect {
 
 	public static void main(String[] args) {
 		String sqlInsert = "INSERT INTO users VALUES(?, ?, ?)";
-		String selectAll = "SELECT * FROM users";
+		String selectAll = "SELECT * FROM Users";
 		try {
 			// connect to database
 			Connection conn = new DBConnect().getConnection();
