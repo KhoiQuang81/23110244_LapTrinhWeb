@@ -1,128 +1,163 @@
-package vn.iotstar.Controller.Admin;
+package vn.iotstar.controller.admin;;
 
+import java.io.File;
+
+import java.io.IOException;
+import java.nio.file.Paths;
 import java.util.List;
-import java.util.Optional;
 
-import org.springframework.beans.BeanUtils;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
-import org.springframework.stereotype.Controller;
-import org.springframework.ui.ModelMap;
-import org.springframework.util.StringUtils;
-import org.springframework.validation.BindingResult;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.ModelAttribute;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.servlet.ModelAndView;
-import org.springframework.web.servlet.mvc.support.RedirectAttributes;
+import jakarta.servlet.RequestDispatcher;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.annotation.WebServlet;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.Part;
+import vn.iotstar.entity.Category;
+import vn.iotstar.service.CategoryService;
+import vn.iotstar.service.impl.CategoryServiceImpl;
+import vn.iotstar.util.Constant;
 
-import jakarta.validation.Valid;
+@WebServlet (urlPatterns = { "/admin/categories", "/admin/category/add", "/admin/category/edit",
+		"/admin/category/delete", "/admin/category/insert", "/admin/category/update", "/admin/category/search" })
+public class CategoryController extends HttpServlet{
 
-import vn.iotstar.Entity.CategoryEntity;
-import vn.iotstar.Model.CategoryModel;
-import vn.iotstar.Service.ICategoryService;
+	private static final long serialVersionUID = 1L;
+	CategoryService cateService = new CategoryServiceImpl();
+	
+	@Override
+	protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+		String url = req.getRequestURI();
+		req.setCharacterEncoding("UTF-8");
 
-@Controller
-@RequestMapping("/admin/categories")
-public class CategoryController {
-	@Autowired
-    ICategoryService categoryService;
+		if (url.contains("add")) {
+			// Hiển thị form thêm category
+			RequestDispatcher dispatcher = req.getRequestDispatcher("/views/admin/add-category.jsp");
+			dispatcher.forward(req, resp);
+		} else if (url.contains("edit")) {
+			// Hiển thị form sửa category
+			String idParam = req.getParameter("id");
+			int id = Integer.parseInt(idParam);
+			Category category = cateService.getIdCategory(id);
+			req.setAttribute("category", category);
+			RequestDispatcher dispatcher = req.getRequestDispatcher("/views/admin/edit-category.jsp");
+			dispatcher.forward(req, resp);
+		} else if (url.contains("search")) {
+			// Hiển thị trang tìm kiếm
+			String keyword = req.getParameter("keyword");
+			if (keyword != null && !keyword.trim().isEmpty()) {
+				List<Category> searchResults = cateService.search(keyword);
+				req.setAttribute("categories", searchResults);
+				req.setAttribute("keyword", keyword);
+			}
+			RequestDispatcher dispatcher = req.getRequestDispatcher("/views/admin/search-category.jsp");
+			dispatcher.forward(req, resp);
+		} else if (url.contains("delete")) {
+			// Xóa category
+			String idParam = req.getParameter("id");
+			int id = Integer.parseInt(idParam);
+			try {
+				cateService.delete(id);
+				req.setAttribute("message", "Xóa thành công!");
+			} catch (Exception e) {
+				req.setAttribute("error", "Xóa thất bại!");
+			}
+			resp.sendRedirect(req.getContextPath() + "/admin/categories");
+		} else {
+			// Hiển thị danh sách categories
+			List<Category> cateList = cateService.getAll();
+			req.setAttribute("categories", cateList);
+			RequestDispatcher dispatcher = req.getRequestDispatcher("/views/admin/list-category.jsp");
+			dispatcher.forward(req, resp);
+		}
+	}
+	
+	@Override
+	protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+		String url = req.getRequestURI();
+		req.setCharacterEncoding("UTF-8");
+		resp.setCharacterEncoding("UTF-8");
 
-    @GetMapping("add")
-    public String add(ModelMap model) {
-        CategoryModel cateModel = new CategoryModel();
-        cateModel.setIsEdit(false);
-        model.addAttribute("category", cateModel);
-        return "admin/categories/addOrEdit";
-    }
+		if (url.contains("insert")) {
+			// Thêm mới category
+			insertCategory(req, resp);
+		} else if (url.contains("update")) {
+			// Cập nhật category
+			updateCategory(req, resp);
+		}
+	}
+	
+	private void insertCategory(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+		try {
+			Category category = new Category();
+			category.setName(req.getParameter("name"));
 
-    @PostMapping("saveOrUpdate")
-    public String saveOrUpdate(ModelMap model, @Valid @ModelAttribute("category") CategoryModel cateModel,
-            BindingResult result, RedirectAttributes redirectAttributes) {
-        if (result.hasErrors()) {
-            return "admin/categories/addOrEdit";
-        }
-        CategoryEntity entity = new CategoryEntity();
-        BeanUtils.copyProperties(cateModel, entity);
-        categoryService.save(entity);
+			// Xử lý upload file image
+			Part filePart = req.getPart("image");
+			if (filePart != null && filePart.getSize() > 0) {
+				String originalFileName = Paths.get(filePart.getSubmittedFileName()).getFileName().toString();
+				String ext = originalFileName.substring(originalFileName.lastIndexOf(".") + 1);
+				String newFileName = System.currentTimeMillis() + "." + ext;
 
-        String message = "";
-        if (Boolean.TRUE.equals(cateModel.getIsEdit())) {
-            message = "Category is Edited";
-        } else {
-            message = "Category is saved";
-        }
-        redirectAttributes.addFlashAttribute("message", message);
-        return "redirect:/admin/categories/searchpaginate";
-    }
+				File uploadFile = new File(Constant.DIR + "/category/" + newFileName);
+				uploadFile.getParentFile().mkdirs();
+				filePart.write(uploadFile.getAbsolutePath());
 
-    @RequestMapping("")
-    public String list(ModelMap model) {
-        List<CategoryEntity> list = categoryService.findAll();
-        model.addAttribute("categories", list);
-        return "admin/categories/list";
-    }
+				category.setImages("category/" + newFileName);
+			} else {
+				category.setImages("default.jpg");
+			}
 
-    @GetMapping("edit/{id}")
-    public ModelAndView edit(ModelMap model, @PathVariable("id") Long id) {
-        Optional<CategoryEntity> optCategory = categoryService.findById(id);
-        CategoryModel cateModel = new CategoryModel();
+			cateService.insert(category);
+			req.setAttribute("message", "Thêm thành công!");
+			resp.sendRedirect(req.getContextPath() + "/admin/categories");
+		} catch (Exception e) {
+			e.printStackTrace();
+			req.setAttribute("error", "Thêm thất bại!");
+			RequestDispatcher dispatcher = req.getRequestDispatcher("/views/admin/add-category.jsp");
+			dispatcher.forward(req, resp);
+		}
+	}
+	
+	private void updateCategory(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+		try {
+			String idParam = req.getParameter("id");
+			int id = Integer.parseInt(idParam);
+			Category category = cateService.getIdCategory(id);
 
-        if (optCategory.isPresent()) {
-            CategoryEntity entity = optCategory.get();
-            BeanUtils.copyProperties(entity, cateModel);
-            cateModel.setIsEdit(true);
-            model.addAttribute("category", cateModel);
-            return new ModelAndView("admin/categories/addOrEdit", model);
-        } else {
-            model.addAttribute("message", "Category is not exist");
-            return new ModelAndView("forward:/admin/categories", model);
-        }
-    }
+			if (category != null) {
+				category.setName(req.getParameter("name"));
 
-    @GetMapping("delete/{id}")
-    public ModelAndView delete(ModelMap model, @PathVariable("id") Long id) {
-        categoryService.deleteById(id);
-        model.addAttribute("message", "Category is deleted");
-        return new ModelAndView("forward:/admin/categories", model);
-    }
+				// Xử lý upload file image
+				Part filePart = req.getPart("image");
+				if (filePart != null && filePart.getSize() > 0) {
+					String originalFileName = Paths.get(filePart.getSubmittedFileName()).getFileName().toString();
+					String ext = originalFileName.substring(originalFileName.lastIndexOf(".") + 1);
+					String newFileName = System.currentTimeMillis() + "." + ext;
 
-    @GetMapping("search")
-    public String search(ModelMap model, @RequestParam(name = "name", required = false) String name) {
-        List<CategoryEntity> list;
-        if (StringUtils.hasText(name)) {
-            list = categoryService.findByNameContaining(name);
-        } else {
-            list = categoryService.findAll();
-        }
-        model.addAttribute("categories", list);
-        return "admin/categories/search";
-    }
+					File uploadFile = new File(Constant.DIR + "/category/" + newFileName);
+					uploadFile.getParentFile().mkdirs();
+					filePart.write(uploadFile.getAbsolutePath());
 
-    @RequestMapping("searchpaginate")
-    public String seach(ModelMap model,
-            @RequestParam(name = "name", required = false) String name,
-            @RequestParam("page") Optional<Integer> page,
-            @RequestParam("size") Optional<Integer> size) {
-        int currentPage = page.orElse(1);
-        int pageSize = size.orElse(3);
-        Pageable pageable = PageRequest.of(currentPage - 1, pageSize, Sort.by("categoryId"));
-        Page<CategoryEntity> resultPage;
+					category.setImages("category/" + newFileName);
+				}
+				// Nếu không upload file mới thì giữ nguyên image cũ
 
-        if (StringUtils.hasText(name)) {
-            model.addAttribute("name", name);
-            resultPage = categoryService.findByNameContaining(name, pageable);
-        } else {
-            resultPage = categoryService.findAll(pageable);
-        }
+				cateService.edit(category);
+				req.setAttribute("message", "Cập nhật thành công!");
+			}
+			resp.sendRedirect(req.getContextPath() + "/admin/categories");
+		} catch (Exception e) {
+			e.printStackTrace();
+			req.setAttribute("error", "Cập nhật thất bại!");
+			String idParam = req.getParameter("id");
+			int id = Integer.parseInt(idParam);
+			Category category = cateService.getIdCategory(id);
+			req.setAttribute("category", category);
+			RequestDispatcher dispatcher = req.getRequestDispatcher("/views/admin/edit-category.jsp");
+			dispatcher.forward(req, resp);
+		}
+	}
+	
 
-        model.addAttribute("categoryPage", resultPage);
-        return "admin/categories/searchpaginated";
-    }
 }
